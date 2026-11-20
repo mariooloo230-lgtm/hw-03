@@ -1,0 +1,9 @@
+.R-library/
+.Rproj.user/
+.Rhistory
+.RData
+.DS_Store
+checks/
+hw-03_files/
+hw-03.knit.md
+hw-03.utf8.md
