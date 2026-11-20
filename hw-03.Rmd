@@ -166,3 +166,59 @@ and problematic residual distribution make this model weak for individual
 predictions. Conventional standard errors and hypothesis tests should also
 be interpreted cautiously because their assumptions are questionable.
 
+## Exercise 2: Compare two linear models
+
+#### Exercise 2 (a)
+
+```{r linear-model-2}
+email_mod_2 <- lm(emailhr ~ educ + advfront, data = gss16_advfront)
+email_coef_2 <- tidy(email_mod_2, conf.int = TRUE)
+knitr::kable(email_coef_2, digits = 4,
+             caption = "Multiple linear regression coefficients")
+```
+
+"Not agree" is the reference category. Holding years of education constant,
+respondents who agree with the statement are estimated to spend
+**`r round(coef(email_mod_2)[["advfrontAgree"]], 3)` more hours per week on
+email** than those who do not agree. Its 95% confidence interval is
+[`r round(email_coef_2$conf.low[email_coef_2$term == "advfrontAgree"], 3)`,
+`r round(email_coef_2$conf.high[email_coef_2$term == "advfrontAgree"], 3)`]
+hours, and p =
+`r round(email_coef_2$p.value[email_coef_2$term == "advfrontAgree"], 3)`.
+This interval includes zero, so the data do not provide clear evidence of
+an additional association after accounting for education. This is an
+adjusted association, not a causal effect.
+
+#### Exercise 2 (b)
+
+```{r compare-linear-models}
+email_glance_2 <- glance(email_mod_2)
+linear_comparison <- bind_rows(
+  "Education only" = email_glance_1,
+  "Education + agreement" = email_glance_2,
+  .id = "Model"
+) %>%
+  select(Model, nobs, r.squared, adj.r.squared, sigma, AIC, BIC)
+
+knitr::kable(linear_comparison, digits = 4,
+             caption = "Linear models fitted to the same complete observations")
+```
+
+The new model explains **`r round(100 * email_glance_2$r.squared, 2)`%**
+of the variation, with a residual standard error of
+`r round(email_glance_2$sigma, 2)` hours. Both models therefore have poor
+overall explanatory performance. Adding `advfront` increases ordinary
+R-squared by only
+`r round(100 * (email_glance_2$r.squared - email_glance_1$r.squared), 3)`
+percentage points. Ordinary R-squared cannot decrease when a predictor is
+added, so it is not sufficient evidence that the larger model is better.
+
+**I prefer the education-only model:** it has the higher adjusted R-squared
+(`r round(email_glance_1$adj.r.squared, 4)` versus
+`r round(email_glance_2$adj.r.squared, 4)`) and the lower AIC
+(`r round(email_glance_1$AIC, 2)` versus
+`r round(email_glance_2$AIC, 2)`). These statistics account for the additional
+complexity. The differences are small, but the extra predictor adds little
+useful information. These are in-sample comparisons; they do not demonstrate
+better prediction on new observations.
+
