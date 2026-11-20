@@ -1,14 +1,8 @@
 ---
-title: "HW 03 - Modelling"
+title: "hw-03"
 author: "Mario Pizarro - Salvia (s2974515)"
-date: "20 November 2026"
-output:
-  html_document:
-    toc: true
-    toc_depth: 2
-    theme: readable
-    highlight: textmate
-    self_contained: true
+date: "`r Sys.Date()`"
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -19,27 +13,16 @@ library(tidyverse)
 library(tidymodels)
 ```
 
-```{r presentation-options, include=FALSE}
-knitr::opts_chunk$set(fig.width = 8, fig.height = 5, dpi = 120,
-                      message = FALSE, collapse = TRUE, comment = "#>")
-theme_set(theme_minimal(base_size = 12))
-options(width = 100)
-```
 
 ## Data load and preparation before modelling
 
-The data are the 2016 General Social Survey extract supplied in the
-[homework template](https://github.com/uoeIDS/hw-03-template). The following
-preparation follows the assignment: missing values are removed before any
-responses are recoded.
-
 ```{r read_data}
-gss16 <- read.csv("data/gss16.csv")
+gss16<-read.csv("data/gss16.csv")
 ```
 
 #### Cleaning and selecting columns
 
-```{r select-complete-cases}
+```{r}
 gss16_advfront <- gss16 %>%
   select(advfront, emailhr, educ, polviews, wrkstat) %>%
   drop_na()
@@ -47,7 +30,7 @@ gss16_advfront <- gss16 %>%
 
 #### Re-levelling `advfront`
 
-```{r recode-advfront}
+```{r}
 gss16_advfront <- gss16_advfront %>%
   mutate(
     advfront = case_when(
@@ -61,7 +44,7 @@ gss16_advfront <- gss16_advfront %>%
 
 #### Re-levelling `polviews`
 
-```{r recode-polviews}
+```{r}
 gss16_advfront <- gss16_advfront %>%
   mutate(
     polviews = case_when(
@@ -71,19 +54,8 @@ gss16_advfront <- gss16_advfront %>%
     ),
     polviews = fct_relevel(polviews, "Conservative", "Moderate", "Liberal")
   )
-
-gss16_advfront %>%
-  count(advfront) %>%
-  mutate(proportion = n / sum(n)) %>%
-  knitr::kable(digits = 3, caption = "Outcome distribution after data preparation")
 ```
 
-There are **`r nrow(gss16_advfront)` complete observations**, from
-`r nrow(gss16)` original rows. "Not agree" includes "Dont know" as instructed;
-it does not mean that every respondent in this group actively disagrees.
-These are observational, complete-case analyses without survey weights.
-Associations should not be interpreted as causal effects, and the results
-cannot automatically be generalised to all US adults.
 
 ## Exercise 1: Create a linear regression model
 
@@ -113,6 +85,8 @@ education level; `emailhr` is the response, so there is no separate
 This negative prediction is not physically meaningful and illustrates a
 limitation of using a straight line for a non-negative response.
 
+The analysis uses `r nrow(gss16_advfront)` complete observations from `r nrow(gss16)` original rows. These are observational, unweighted complete-case analyses; associations are not causal effects and cannot automatically be generalised to all US adults.
+
 #### Exercise 1 (b)
 
 ```{r linear-model-1-fit}
@@ -135,7 +109,7 @@ p = `r format(email_glance_1$p.value, scientific = TRUE, digits = 3)`.
 Thus there is evidence of an association, but statistical significance does
 not imply useful predictive performance.
 
-```{r scatterplot, fig.cap="Weekly email hours versus years of education, with the fitted regression line."}
+```{r scatterplot, fig.width=8, fig.height=5, fig.cap="Weekly email hours versus years of education, with the fitted regression line."}
 ggplot(gss16_advfront, aes(x = educ, y = emailhr)) +
   geom_point(alpha = 0.25, colour = "#28536B") +
   geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
@@ -143,7 +117,7 @@ ggplot(gss16_advfront, aes(x = educ, y = emailhr)) +
   labs(x = "Years of education", y = "Email hours per week")
 ```
 
-```{r linear-diagnostics, fig.height=7, fig.cap="Residual diagnostics for the simple linear regression."}
+```{r linear-diagnostics, fig.width=8, fig.height=7, fig.cap="Residual diagnostics for the simple linear regression."}
 old_par <- par(mfrow = c(2, 2), mar = c(4.5, 5, 2, 2))
 plot(email_mod_1, which = c(1, 2, 3, 5))
 par(old_par)
@@ -231,11 +205,6 @@ gss16_train <- training(gss16_split)
 gss16_test  <- testing(gss16_split)
 ```
 
-The specified split produces `r nrow(gss16_train)` training observations and
-`r nrow(gss16_test)` test observations. Both logistic models below use this
-same split. Their parameters and preprocessing are estimated from the
-training data only.
-
 #### Exercise 3 (a)
 
 ```{r workflow-1}
@@ -258,9 +227,11 @@ education and produces probabilities between zero and one. The `glm`
 engine fits a binomial model with a logit link. Education is already numeric,
 so no dummy encoding is needed for this first recipe.
 
+The specified split gives `r nrow(gss16_train)` training observations and `r nrow(gss16_test)` test observations. Both logistic models use this same split, with fitting and preprocessing learned only from the training data.
+
 #### Exercise 3 (b)
 
-```{r fit-and-predict-1}
+```{r fit-and-predict-1, fig.width=8, fig.height=5}
 gss16_fit_1 <- fit(gss16_wflow_1, data = gss16_train)
 
 gss16_pred_1 <- bind_cols(
@@ -396,7 +367,7 @@ fewer dummy variable than the number of levels for each predictor (see the
 The workflow learns this encoding on the training data and applies it to
 the test data.
 
-```{r compare-roc, fig.cap="ROC curves evaluated on the same held-out test observations."}
+```{r compare-roc, fig.width=8, fig.height=5, fig.cap="ROC curves evaluated on the same held-out test observations."}
 bind_rows("Model 1: educ" = roc_1,
           "Model 2: all four predictors" = roc_2,
           .id = "Model") %>%
@@ -430,14 +401,3 @@ it is based on one random split. It does not establish a statistically
 significant difference or guarantee the same ranking in other samples.
 ROC AUC also does not assess probability calibration or the practical
 costs of false positives and false negatives.
-
-## Reproducibility
-
-All reported numbers and figures are generated from the code above. The
-split uses the required seed of 1234 without stratification, as specified
-in the assignment. Package versions are recorded below because changes
-in software can affect reproducibility.
-
-```{r session-information}
-sessionInfo()
-```

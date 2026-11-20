@@ -7,3 +7,8 @@ checks/
 hw-03_files/
 hw-03.knit.md
 hw-03.utf8.md
+
+.Ruserdata
+hw-03-template_files/
+hw-03-template.knit.md
+hw-03-template.utf8.md

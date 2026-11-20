@@ -11,4 +11,6 @@ if (!rmarkdown::pandoc_available()) {
     Sys.setenv(RSTUDIO_PANDOC = bundled)
   }
 }
-rmarkdown::render("hw-03.Rmd", envir = new.env(), clean = TRUE)
+rmarkdown::render("hw-03-template.Rmd", envir = new.env(), clean = TRUE)
+
+capture.output(sessionInfo(), file = "session-info.txt")
