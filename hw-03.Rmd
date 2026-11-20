@@ -144,7 +144,7 @@ ggplot(gss16_advfront, aes(x = educ, y = emailhr)) +
 ```
 
 ```{r linear-diagnostics, fig.height=7, fig.cap="Residual diagnostics for the simple linear regression."}
-old_par <- par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+old_par <- par(mfrow = c(2, 2), mar = c(4.5, 5, 2, 2))
 plot(email_mod_1, which = c(1, 2, 3, 5))
 par(old_par)
 ```
@@ -288,3 +288,156 @@ The ROC curve shows sensitivity against the false positive rate across
 thresholds. The test AUC is **`r round(auc_1$.estimate, 3)`**;
 0.5 represents chance-level ranking and 1 represents perfect ranking.
 
+## Exercise 4: Performance of a logistic regression
+
+#### Exercise 4 (a)
+
+```{r confusion-matrix-083}
+gss16_pred_1 <- gss16_pred_1 %>%
+  mutate(
+    .pred_class = factor(
+      if_else(.pred_Agree >= 0.83, "Agree", "Not agree"),
+      levels = levels(gss16_test$advfront)
+    )
+  )
+
+conf_mat(gss16_pred_1, truth = advfront, estimate = .pred_class)
+
+counts_083 <- gss16_pred_1 %>%
+  summarise(
+    TP = sum(advfront == "Agree" & .pred_class == "Agree"),
+    TN = sum(advfront == "Not agree" & .pred_class == "Not agree"),
+    FP = sum(advfront == "Not agree" & .pred_class == "Agree"),
+    FN = sum(advfront == "Agree" & .pred_class == "Not agree")
+  )
+
+counts_083 %>%
+  pivot_longer(everything(), names_to = "Outcome", values_to = "Count") %>%
+  mutate(Meaning = c("True positive", "True negative",
+                     "False positive", "False negative")) %>%
+  select(Outcome, Meaning, Count) %>%
+  knitr::kable(caption = "Test predictions at the 0.83 cutoff; positive = Agree")
+
+metrics_083 <- bind_rows(
+  sens(gss16_pred_1, truth = advfront, estimate = .pred_class,
+       event_level = "second"),
+  spec(gss16_pred_1, truth = advfront, estimate = .pred_class,
+       event_level = "second")
+)
+knitr::kable(metrics_083, digits = 4,
+             caption = "Sensitivity and specificity at the 0.83 cutoff")
+```
+
+The cutoff is applied to the **unrounded** probability of agreement, with
+equality included in the "Agree" prediction. The resulting rates are
+
+\[
+\text{Sensitivity} = \frac{TP}{TP+FN}
+= \frac{`r counts_083$TP`}{`r counts_083$TP` + `r counts_083$FN`}
+= `r round(counts_083$TP / (counts_083$TP + counts_083$FN), 4)`,
+\]
+
+\[
+\text{Specificity} = \frac{TN}{TN+FP}
+= \frac{`r counts_083$TN`}{`r counts_083$TN` + `r counts_083$FP`}
+= `r round(counts_083$TN / (counts_083$TN + counts_083$FP), 4)`.
+\]
+
+The model correctly identifies
+`r round(100 * counts_083$TP / (counts_083$TP + counts_083$FN), 1)`%
+of respondents who agree and
+`r round(100 * counts_083$TN / (counts_083$TN + counts_083$FP), 1)`%
+of respondents who do not agree. Sensitivity and specificity measure
+performance within the actual positive and negative groups, respectively;
+they are not the overall accuracy.
+
+#### Exercise 4 (b)
+
+```{r workflow-2}
+gss16_rec_2 <- recipe(
+  advfront ~ polviews + wrkstat + emailhr + educ,
+  data = gss16_train
+) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+gss16_mod_2 <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+gss16_wflow_2 <- workflow() %>%
+  add_recipe(gss16_rec_2) %>%
+  add_model(gss16_mod_2)
+
+gss16_fit_2 <- fit(gss16_wflow_2, data = gss16_train)
+
+gss16_pred_2 <- bind_cols(
+  gss16_test %>% select(advfront),
+  predict(gss16_fit_2, new_data = gss16_test, type = "prob")
+)
+
+roc_2 <- roc_curve(gss16_pred_2, truth = advfront, .pred_Agree,
+                   event_level = "second")
+auc_2 <- roc_auc(gss16_pred_2, truth = advfront, .pred_Agree,
+                 event_level = "second")
+
+auc_comparison <- bind_rows(
+  "Model 1: educ" = auc_1,
+  "Model 2: polviews + wrkstat + emailhr + educ" = auc_2,
+  .id = "Model"
+)
+knitr::kable(auc_comparison, digits = 4, caption = "Test ROC AUC comparison")
+```
+
+The second model is also logistic regression because the outcome is still
+binary. `step_dummy(all_nominal(), -all_outcomes())` encodes the categorical
+predictors and explicitly excludes `advfront`. By default, it creates one
+fewer dummy variable than the number of levels for each predictor (see the
+[recipes documentation](https://recipes.tidymodels.org/reference/step_dummy.html)).
+The workflow learns this encoding on the training data and applies it to
+the test data.
+
+```{r compare-roc, fig.cap="ROC curves evaluated on the same held-out test observations."}
+bind_rows("Model 1: educ" = roc_1,
+          "Model 2: all four predictors" = roc_2,
+          .id = "Model") %>%
+  ggplot(aes(x = 1 - specificity, y = sensitivity, colour = Model)) +
+  geom_path(linewidth = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed",
+              colour = "grey55") +
+  coord_equal() +
+  scale_colour_manual(values = c("#28536B", "#C05A32")) +
+  labs(x = "False positive rate (1 - specificity)",
+       y = "True positive rate (sensitivity)", colour = NULL) +
+  theme(legend.position = "bottom")
+```
+
+**`r if (auc_2$.estimate > auc_1$.estimate) "Model 2" else "Model 1"`
+performs better on this test set according to ROC AUC.** Model 1 has AUC
+`r round(auc_1$.estimate, 4)` and Model 2 has AUC
+`r round(auc_2$.estimate, 4)`, an absolute difference of
+`r round(abs(auc_2$.estimate - auc_1$.estimate), 4)`.
+Higher AUC indicates better ranking of respondents who agree above those
+who do not agree across thresholds; it is not the percentage correctly
+classified at a particular cutoff. Adding predictors does not guarantee
+better performance on unseen observations.
+
+Both AUC values are close to 0.5, so neither model discriminates well between
+the two groups. In this split, the additional predictors do not improve
+out-of-sample ranking; the simpler model is preferable by the chosen metric.
+
+This comparison uses the same held-out observations for both models, but
+it is based on one random split. It does not establish a statistically
+significant difference or guarantee the same ranking in other samples.
+ROC AUC also does not assess probability calibration or the practical
+costs of false positives and false negatives.
+
+## Reproducibility
+
+All reported numbers and figures are generated from the code above. The
+split uses the required seed of 1234 without stratification, as specified
+in the assignment. Package versions are recorded below because changes
+in software can affect reproducibility.
+
+```{r session-information}
+sessionInfo()
+```
