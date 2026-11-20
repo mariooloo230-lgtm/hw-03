@@ -222,3 +222,69 @@ complexity. The differences are small, but the extra predictor adds little
 useful information. These are in-sample comparisons; they do not demonstrate
 better prediction on new observations.
 
+## Exercise 3: Create a workflow to fit a model
+
+```{r split-data}
+set.seed(1234)
+gss16_split <- initial_split(gss16_advfront)
+gss16_train <- training(gss16_split)
+gss16_test  <- testing(gss16_split)
+```
+
+The specified split produces `r nrow(gss16_train)` training observations and
+`r nrow(gss16_test)` test observations. Both logistic models below use this
+same split. Their parameters and preprocessing are estimated from the
+training data only.
+
+#### Exercise 3 (a)
+
+```{r workflow-1}
+gss16_rec_1 <- recipe(advfront ~ educ, data = gss16_train)
+
+gss16_mod_1 <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+gss16_wflow_1 <- workflow() %>%
+  add_recipe(gss16_rec_1) %>%
+  add_model(gss16_mod_1)
+
+gss16_wflow_1
+```
+
+I choose **binary logistic regression** because `advfront` has two outcome
+categories. It models the log-odds of agreement as a linear function of
+education and produces probabilities between zero and one. The `glm`
+engine fits a binomial model with a logit link. Education is already numeric,
+so no dummy encoding is needed for this first recipe.
+
+#### Exercise 3 (b)
+
+```{r fit-and-predict-1}
+gss16_fit_1 <- fit(gss16_wflow_1, data = gss16_train)
+
+gss16_pred_1 <- bind_cols(
+  gss16_test %>% select(advfront),
+  predict(gss16_fit_1, new_data = gss16_test, type = "prob")
+)
+
+roc_1 <- roc_curve(gss16_pred_1, truth = advfront, .pred_Agree,
+                   event_level = "second")
+auc_1 <- roc_auc(gss16_pred_1, truth = advfront, .pred_Agree,
+                 event_level = "second")
+
+autoplot(roc_1) +
+  labs(title = "Model 1: education only",
+       subtitle = paste("Test ROC AUC =", round(auc_1$.estimate, 3)),
+       x = "False positive rate (1 - specificity)",
+       y = "True positive rate (sensitivity)")
+```
+
+"Agree" is the positive event throughout. Because it is the **second**
+factor level, `event_level = "second"` must be used with `.pred_Agree` in
+the ROC and performance calculations (see the
+[yardstick documentation](https://yardstick.tidymodels.org/reference/roc_auc.html)).
+The ROC curve shows sensitivity against the false positive rate across
+thresholds. The test AUC is **`r round(auc_1$.estimate, 3)`**;
+0.5 represents chance-level ranking and 1 represents perfect ranking.
+
