@@ -1,0 +1,168 @@
+---
+title: "HW 03 - Modelling"
+author: "Mario Pizarro - Salvia (s2974515)"
+date: "20 November 2026"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: readable
+    highlight: textmate
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+## **DO NOT EDIT THIS CODE CHUNK**
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r presentation-options, include=FALSE}
+knitr::opts_chunk$set(fig.width = 8, fig.height = 5, dpi = 120,
+                      message = FALSE, collapse = TRUE, comment = "#>")
+theme_set(theme_minimal(base_size = 12))
+options(width = 100)
+```
+
+## Data load and preparation before modelling
+
+The data are the 2016 General Social Survey extract supplied in the
+[homework template](https://github.com/uoeIDS/hw-03-template). The following
+preparation follows the assignment: missing values are removed before any
+responses are recoded.
+
+```{r read_data}
+gss16 <- read.csv("data/gss16.csv")
+```
+
+#### Cleaning and selecting columns
+
+```{r select-complete-cases}
+gss16_advfront <- gss16 %>%
+  select(advfront, emailhr, educ, polviews, wrkstat) %>%
+  drop_na()
+```
+
+#### Re-levelling `advfront`
+
+```{r recode-advfront}
+gss16_advfront <- gss16_advfront %>%
+  mutate(
+    advfront = case_when(
+      advfront == "Strongly agree" ~ "Agree",
+      advfront == "Agree" ~ "Agree",
+      TRUE ~ "Not agree"
+    ),
+    advfront = fct_relevel(advfront, "Not agree", "Agree")
+  )
+```
+
+#### Re-levelling `polviews`
+
+```{r recode-polviews}
+gss16_advfront <- gss16_advfront %>%
+  mutate(
+    polviews = case_when(
+      str_detect(polviews, "[Cc]onservative") ~ "Conservative",
+      str_detect(polviews, "[Ll]iberal") ~ "Liberal",
+      TRUE ~ polviews
+    ),
+    polviews = fct_relevel(polviews, "Conservative", "Moderate", "Liberal")
+  )
+
+gss16_advfront %>%
+  count(advfront) %>%
+  mutate(proportion = n / sum(n)) %>%
+  knitr::kable(digits = 3, caption = "Outcome distribution after data preparation")
+```
+
+There are **`r nrow(gss16_advfront)` complete observations**, from
+`r nrow(gss16)` original rows. "Not agree" includes "Dont know" as instructed;
+it does not mean that every respondent in this group actively disagrees.
+These are observational, complete-case analyses without survey weights.
+Associations should not be interpreted as causal effects, and the results
+cannot automatically be generalised to all US adults.
+
+## Exercise 1: Create a linear regression model
+
+#### Exercise 1 (a)
+
+```{r linear-model-1}
+email_mod_1 <- lm(emailhr ~ educ, data = gss16_advfront)
+email_coef_1 <- tidy(email_mod_1, conf.int = TRUE)
+knitr::kable(email_coef_1, digits = 4,
+             caption = "Simple linear regression coefficients")
+```
+
+The fitted line is
+
+\[
+\widehat{\text{emailhr}} =
+`r round(coef(email_mod_1)[[1]], 3)` +
+`r round(coef(email_mod_1)[[2]], 3)`\,\text{educ}.
+\]
+
+Each additional year of education is associated with an estimated
+**`r round(coef(email_mod_1)[[2]], 3)` additional hours spent on email per week**,
+on average. The fitted value estimates mean weekly email hours for a given
+education level; `emailhr` is the response, so there is no separate
+`emailhr` regression coefficient. The intercept is
+`r round(coef(email_mod_1)[[1]], 3)` hours at zero years of education.
+This negative prediction is not physically meaningful and illustrates a
+limitation of using a straight line for a non-negative response.
+
+#### Exercise 1 (b)
+
+```{r linear-model-1-fit}
+email_glance_1 <- glance(email_mod_1)
+# Display all columns returned by glance() in a readable vertical table.
+email_glance_1 %>%
+  pivot_longer(everything(), names_to = "Statistic", values_to = "Value") %>%
+  knitr::kable(digits = 6, caption = "All model fit statistics from glance()")
+```
+
+The model has an R-squared of **`r round(email_glance_1$r.squared, 4)`**,
+so education explains only **`r round(100 * email_glance_1$r.squared, 2)`%**
+of the observed variation in weekly email hours. The adjusted R-squared is
+`r round(email_glance_1$adj.r.squared, 4)`. The residual standard error is
+`r round(email_glance_1$sigma, 2)` hours per week, indicating substantial
+unexplained variation. The overall F-test gives
+F(`r email_glance_1$df`, `r email_glance_1$df.residual`) =
+`r round(email_glance_1$statistic, 2)` and
+p = `r format(email_glance_1$p.value, scientific = TRUE, digits = 3)`.
+Thus there is evidence of an association, but statistical significance does
+not imply useful predictive performance.
+
+```{r scatterplot, fig.cap="Weekly email hours versus years of education, with the fitted regression line."}
+ggplot(gss16_advfront, aes(x = educ, y = emailhr)) +
+  geom_point(alpha = 0.25, colour = "#28536B") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              colour = "#C05A32", linewidth = 1) +
+  labs(x = "Years of education", y = "Email hours per week")
+```
+
+```{r linear-diagnostics, fig.height=7, fig.cap="Residual diagnostics for the simple linear regression."}
+old_par <- par(mfrow = c(2, 2), mar = c(4, 4, 2, 2))
+plot(email_mod_1, which = c(1, 2, 3, 5))
+par(old_par)
+```
+
+The residual-versus-fitted plot shows a non-uniform vertical spread, with
+large positive residuals at higher fitted values. The scale-location plot
+also shows increasing residual spread, making constant error variance
+questionable. The residual smoother trends down rather than remaining
+horizontal around zero, which also raises doubts about the linear mean
+relationship. The Q-Q plot departs strongly from the reference line in the
+upper tail, indicating right-skewed, non-normal residuals and large outliers.
+The residual-versus-leverage plot helps identify observations that could
+influence the fitted line. The model also predicts negative hours at very
+low education levels.
+
+The plots do not establish that errors are independent; this depends on the
+survey design, and respondents may be clustered. Overall, the low R-squared
+and problematic residual distribution make this model weak for individual
+predictions. Conventional standard errors and hypothesis tests should also
+be interpreted cautiously because their assumptions are questionable.
+
